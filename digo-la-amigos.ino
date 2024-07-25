@@ -287,7 +287,7 @@ void loop() {
     sessionPrevMillis = currentMillis;
 
     // Query Session
-    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").order("time", "asc", true).doSelect();
+    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").eq("is_enabled", "TRUE").order("time", "asc", true).doSelect();
     Serial.println(sessionRead);
     db.urlQuery_reset();
 
