@@ -258,14 +258,40 @@ void loop() {
       }
     }
   } else if (currentMillis - sessionPrevMillis >= sessionInterval) {
+    // get device information
+    String deviceRead = db.from("device").select("*").eq("id", DEVICE_ID).doSelect();
+    Serial.println(deviceRead);
+    db.urlQuery_reset();
+
+    StaticJsonDocument<200> deviceDoc;
+    error = deserializeJson(deviceDoc, deviceRead);
+
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    if (deviceDoc.isNull() || deviceDoc.size() == 0) {
+      Serial.println("Device is not registered");
+      return;
+    }
+
+    deviceLabel = deviceDoc[0]["label"].as<String>();
+    deviceIsEnabled = deviceDoc[0]["is_enabled"];
+    deviceLightRed = deviceDoc[0]["light_red"];
+    deviceLightGreen = deviceDoc[0]["light_green"];
+    deviceLightBlue = deviceDoc[0]["light_blue"];
+    deviceVolume = deviceDoc[0]["volume"];
+
     sessionPrevMillis = currentMillis;
 
     // Query Session
-    String read = db.from("session").select("*").eq("is_deleted", "FALSE").order("time", "asc", true).doSelect();
-    Serial.println(read);
+    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").order("time", "asc", true).doSelect();
+    Serial.println(sessionRead);
     db.urlQuery_reset();
 
-    error = deserializeJson(doc, read);
+    error = deserializeJson(doc, sessionRead);
 
     // Test if parsing succeeds
     if (error) {
@@ -328,27 +354,6 @@ void loop() {
 
         // insert start session activity
         insertActivity("Session started");
-
-        // get device information
-        String read = db.from("device").select("*").eq("id", DEVICE_ID).doSelect();
-        Serial.println(read);
-        db.urlQuery_reset();
-
-        StaticJsonDocument<200> deviceDoc;
-        error = deserializeJson(deviceDoc, read);
-
-        if (error) {
-          Serial.print(F("deserializeJson() failed: "));
-          Serial.println(error.f_str());
-          return;
-        }
-
-        deviceLabel = deviceDoc[0]["label"].as<String>();
-        deviceIsEnabled = deviceDoc[0]["is_enabled"];
-        deviceLightRed = deviceDoc[0]["light_red"];
-        deviceLightGreen = deviceDoc[0]["light_green"];
-        deviceLightBlue = deviceDoc[0]["light_blue"];
-        deviceVolume = deviceDoc[0]["volume"];
 
         startRinging();
         comePrevMillis = currentMillis;
