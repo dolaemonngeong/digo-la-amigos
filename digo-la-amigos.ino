@@ -25,6 +25,9 @@
 #include <avr/power.h>
 #endif
 
+// camera
+#include "esp_camera.h"
+
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTP ntp(ntpUDP);
@@ -103,6 +106,10 @@ Adafruit_NeoPixel pixels(NUMPIXELS, LED, NEO_GRB + NEO_KHZ800);
 // Supabase debugging variables
 int code = 0;
 DeserializationError error;
+
+// Camera settup
+void startCameraServer();
+void setupLedFlash(int pin);
 
 void setup() {
   Serial.begin(9600);
