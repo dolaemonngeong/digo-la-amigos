@@ -51,8 +51,8 @@ String supabase_url = "https://aluowkxhbjklwfuqnxcc.supabase.co";
 String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsdW93a3hoYmprbHdmdXFueGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjA5NzI1MzMsImV4cCI6MjAzNjU0ODUzM30.riqECUMyUCZsokphF-vjJUOIxL8uqguRklypLQU5RBY";
 
 // id device
-String DEVICE_ID = "e1f1cd94-33e6-4d51-8c0b-c44404f474c2";
-String OTHER_DEVICE_ID = "a61454a3-52b5-4389-bd83-ed21c6aa930c";
+String DEVICE_ID = "a61454a3-52b5-4389-bd83-ed21c6aa930c";
+String OTHER_DEVICE_ID = "e1f1cd94-33e6-4d51-8c0b-c44404f474c2";
 
 // put your WiFi credentials (SSID and Password) here
 const char *ssid = "ipongnya davina";
@@ -72,8 +72,6 @@ const int WEIGHT_SENSOR_DOUT = 33;
 const int WEIGHT_SENSOR_SCK = 32;
 
 // Session time variables
-unsigned long sessionPrevMillis = 60000;
-const long sessionInterval = 60000;
 unsigned long comePrevMillis = 0;
 const long comeInterval = 600000;
 const long dispensingWaitTime = 5000;
@@ -205,19 +203,6 @@ void updateHistoryStatus(String status) {
   serializeJson(historyDoc, json);
 
   code = db.update("history").eq("id", historyID).doUpdate(json);
-  Serial.println(code);
-  db.urlQuery_reset();
-}
-
-void assignTurn(String sessionID) {
-  // Current device update
-  StaticJsonDocument<200> deviceDoc;
-  device1Doc["current_session"] = sessionID;
-
-  String json;
-  serializeJson(deviceDoc, json);
-
-  code = db.update("device").eq("id", DEVICE_ID).doUpdate(json);
   Serial.println(code);
   db.urlQuery_reset();
 }
@@ -374,38 +359,33 @@ void loop() {
 
     JsonArray array = deviceDoc.as<JsonArray>();
     if (!array.isNull() && array.size() > 0) {
-      if (array[0]["current_session"].as<String>() == curSessionID) {
-        if (--deviceRound <= 0) {
-          // check status if not Unfinished
-          String sessionStatusRead = db.from("session").select("status").eq("id", curSessionID).limit(1).doSelect();
-          Serial.println(sessionStatusRead);
-          db.urlQuery_reset();
+      curSessionID = array[0]["current_session"].as<String>()
+      if (curSessionID != " ") {
+        // get history ID
+        String historyRead = db.from("history").select("id").order("created_at", "desc", true).limit(1).doSelect();
+        Serial.println(historyRead);
+        db.urlQuery_reset();
 
-          error = deserializeJson(sessionStatusDoc, sessionStatusRead);
-          if (error) {
-            Serial.print(F("deserializeJson() failed: "));
-            Serial.println(error.f_str());
-            return;
-          }
+        error = deserializeJson(historyDoc, historyRead);
+        if (error) {
+          Serial.print(F("deserializeJson() failed: "));
+          Serial.println(error.f_str());
+          return;
+        }
 
-          JsonArray sessionStatusArray = deviceDoc.as<JsonArray>();
-          if (!sessionStatusArray.isNull() && sessionStatusArray.size() > 0) {
-            if (array[0]["status"].as<String>() != "Unfinished") {
-              finishSession();
-            }
-          } else {
-            insertActivity("Session is stopped unexpectedly at " + deviceLabel);
-            updateHistoryStatus("Unfinished");
-          }
+        JsonArray array = historyDoc.as<JsonArray>();
+        if (!array.isNull() && array.size() > 0) {
+          historyID = array[0]["id"].as<String>();
         } else {
-          startRinging();
-          comePrevMillis = currentMillis;
+          Serial.println("No valid history found.");
         }
 
         isWaiting = false;
+        startRinging();
+        comePrevMillis = currentMillis;
       }
     } else {
-      Serial.println("No valid device found.");
+      Serial.println("No valid session found.");
     }
   } else if (isRinging) {
     // detect ada pergerakan dengan infrared distance sensor
@@ -428,6 +408,7 @@ void loop() {
       // Post activity dog didn't come to device
       insertActivity("Your dog didn't come to " + deviceLabel);
       updateHistoryStatus("Unfinished");
+      passSessionTurnToOther(curSessionID);
 
       stopRinging();
     }
@@ -442,13 +423,7 @@ void loop() {
           if (++weightedCount > WEIGHT_MINIMUM_TIME) {
             // Post Activity Anjing menghabiskan makanan di device
             insertActivity("Your dog finished the food at " + deviceLabel);
-
-            if (--deviceRound > 0) {
-              // Update session current_device
-              passSessionTurnToOther(curSessionID);
-            } else {
-              finishSession();
-            }
+            passSessionTurnToOther(curSessionID);
 
             isFeeding = false;
             weightedCount = 0;
@@ -457,113 +432,10 @@ void loop() {
           // Post Activity Anjing ga habisin makanan di device
           insertActivity("Your dog didn't finish the food at " + deviceLabel);
           updateHistoryStatus("Unfinished");
+          passSessionTurnToOther(curSessionID);
 
           isFeeding = false;
         }
-      }
-    }
-  } else if (currentMillis - sessionPrevMillis >= sessionInterval) {
-    // get device information
-    String deviceRead = db.from("device").select("*").eq("id", DEVICE_ID).doSelect();
-    Serial.println(deviceRead);
-    db.urlQuery_reset();
-
-    StaticJsonDocument<200> deviceDoc;
-    error = deserializeJson(deviceDoc, deviceRead);
-
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-
-    if (deviceDoc.isNull() || deviceDoc.size() == 0) {
-      Serial.println("Device is not registered");
-      return;
-    }
-
-    deviceLabel = deviceDoc[0]["label"].as<String>();
-    deviceIsEnabled = deviceDoc[0]["is_enabled"];
-    deviceLightRed = deviceDoc[0]["light_red"];
-    deviceLightGreen = deviceDoc[0]["light_green"];
-    deviceLightBlue = deviceDoc[0]["light_blue"];
-    deviceVolume = deviceDoc[0]["volume"];
-
-    sessionPrevMillis = currentMillis;
-
-    // Query Session
-    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").eq("is_enabled", "TRUE").order("time", "asc", true).doSelect();
-    Serial.println(sessionRead);
-    db.urlQuery_reset();
-
-    error = deserializeJson(doc, sessionRead);
-
-    // Test if parsing succeeds
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-
-    ntp.update();
-    int currentHour = ntp.hours();
-    int currentMinute = ntp.minutes();
-
-    for (JsonObject sessionObj : doc.as<JsonArray>()) {
-      Serial.println(sessionObj);
-      const char *timeStr = sessionObj["time"];
-      Serial.println(timeStr);
-
-      // Parse the time string "2024-07-18T03:45:45+00:00"
-      int year, month, day, hour, minute, second;
-      sscanf(timeStr, "%4d-%2d-%2dT%2d:%2d:%2d", &year, &month, &day, &hour, &minute, &second);
-
-      // Compare with current time
-      Serial.printf("%d:%d | %d:%d\n", hour, minute, currentHour, currentMinute);
-      if (currentHour == hour && currentMinute == minute) {
-        portion = sessionObj["portion"];
-        deviceRound = sessionObj["round"];
-        curSessionID = sessionObj["id"];
-
-        // insert history
-        StaticJsonDocument<200> historyDoc;
-        historyDoc["date"] = String(year) + "-" + String(month) + "-" + String(day);
-        historyDoc["status"] = "Ongoing";
-        historyDoc["session_id"] = sessionObj["id"];
-
-        String json;
-        serializeJson(historyDoc, json);
-
-        code = db.insert("history", json, false);
-        Serial.printf("Insert History: %d", code);
-        db.urlQuery_reset();
-
-        // get history ID
-        String historyRead = db.from("history").select("id").order("created_at", "desc", true).limit(1).doSelect();
-        Serial.println(historyRead);
-        db.urlQuery_reset();
-
-        error = deserializeJson(historyDoc, historyRead);
-        if (error) {
-          Serial.print(F("deserializeJson() failed: "));
-          Serial.println(error.f_str());
-          return;
-        }
-
-        JsonArray array = historyDoc.as<JsonArray>();
-        if (!array.isNull() && array.size() > 0) {
-          historyID = array[0]["id"].as<String>();
-        } else {
-          Serial.println("No valid history found.");
-        }
-
-        // insert start session activity
-        insertActivity("Session started");
-
-        assignTurn(curSessionID);
-        startRinging();
-        comePrevMillis = currentMillis;
-        break;
       }
     }
   }
