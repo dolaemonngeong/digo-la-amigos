@@ -1,6 +1,6 @@
 // blinkwithoutdelay di example 02.digital
 #include <Arduino.h>
-#include <ESP32_Supabase.h>
+#include <ESPSupabase.h>
 #include "HX711.h"
 
 #if defined(ESP8266)
@@ -27,9 +27,56 @@
 
 // camera
 #include "esp_camera.h"
+#include "esp_timer.h"
+#include "img_converters.h"
+#include "Arduino.h"
+#include "soc/soc.h"           // Disable brownour problems
+#include "soc/rtc_cntl_reg.h"  // Disable brownour problems
+#include "driver/rtc_io.h"
+#include <SPIFFS.h>
+#include <FS.h>
 #define CAMERA_MODEL_WROVER_KIT // Has PSRAM
-#include "camera_pins.h"
-bool takeNewPhoto = false;
+#define CAMERA_MODEL_ESP32_CAM_BOARD
+// #define PWDN_GPIO_NUM     32
+// #define RESET_GPIO_NUM    -1
+// #define XCLK_GPIO_NUM      0
+// #define SIOD_GPIO_NUM     26
+// #define SIOC_GPIO_NUM     27
+// #define Y9_GPIO_NUM       35
+// #define Y8_GPIO_NUM       34
+// #define Y7_GPIO_NUM       39
+// #define Y6_GPIO_NUM       36
+// #define Y5_GPIO_NUM       21
+// #define Y4_GPIO_NUM       19
+// #define Y3_GPIO_NUM       18
+// #define Y2_GPIO_NUM        5
+// #define VSYNC_GPIO_NUM    25
+// #define HREF_GPIO_NUM     23
+// #define PCLK_GPIO_NUM     22
+
+#define PWDN_GPIO_NUM -1
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM 21
+#define SIOD_GPIO_NUM 26
+#define SIOC_GPIO_NUM 27
+#define Y9_GPIO_NUM 35
+#define Y8_GPIO_NUM 34
+#define Y7_GPIO_NUM 39
+#define Y6_GPIO_NUM 36
+#define Y5_GPIO_NUM 19
+#define Y4_GPIO_NUM 18
+#define Y3_GPIO_NUM 5
+#define Y2_GPIO_NUM 4
+#define VSYNC_GPIO_NUM 25
+#define HREF_GPIO_NUM 23
+#define PCLK_GPIO_NUM 22
+
+camera_config_t config;
+
+
+// #include "camera_pins.h"
+// using eloq::camera;
+// bool takeNewPhoto = false;
 // Photo File Name to save in SPIFFS
 #define FILE_PHOTO "/photo.jpg"
 void startCameraServer();
@@ -59,8 +106,8 @@ const char *ssid = "ipongnya davina";
 const char *psswd = "doremonishere";
 
 // Put Supabase account credentials here
-const String email = "";
-const String password = "";
+const String serviceEmail = "sidiganteng@gmail.com";
+const String servicePassword = "12345678";
 
 // Pins
 const int BUTTON = 0;
@@ -132,6 +179,15 @@ void setup() {
   // Beginning Supabase Connection
   db.begin(supabase_url, anon_key);
 
+  int loginResponse = db.login_email(serviceEmail, servicePassword);
+  if (loginResponse != 200)
+  {
+    Serial.printf("Login failed with code: %d.\n\r", loginResponse);
+    return;
+  } else {
+    Serial.printf("Login Success!");
+  }
+
   ntp.begin();
 
   pinMode(2, OUTPUT);
@@ -154,29 +210,79 @@ void setup() {
   pixels.clear();
 
   // Camera
+// Print ESP32 Local IP Address
+  Serial.print("IP Address: http://");
+  Serial.println(WiFi.localIP());
 
-  // delay(3000);
-  //   Serial.begin(115200);
-  Serial.println("___SAVE PIC TO SPIFFS___");
+  // Turn-off the 'brownout detector'
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-    // camera settings
-    // replace with your own model!
-  camera.pinout.wroom_s3();
-  camera.brownout.disable();
-  camera.resolution.vga();
-  camera.quality.high();
+  // OV2640 camera module
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
 
-  // init camera
-  while (!camera.begin().isOk())
-    Serial.println(camera.exception.toString());
+  if (psramFound()) {
+    config.frame_size = FRAMESIZE_UXGA;
+    config.jpeg_quality = 10;
+    config.fb_count = 2;
+  } else {
+    config.frame_size = FRAMESIZE_SVGA;
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
+  }
+  
+  initCamera();
 
-    // init SPIFFS
-  while (!spiffs.begin().isOk())
-    Serial.println(spiffs.exception.toString());
+  // // delay(3000);
+  // //   Serial.begin(115200);
+  // Serial.println("___SAVE PIC TO SPIFFS___");
 
-  Serial.println("Camera OK");
-  Serial.println("SPIFFS OK");
-  Serial.println("Enter 'capture' to capture a new picture and save to SPIFFS");
+  //   // camera settings
+  //   // replace with your own model!
+  
+  // camera.pinout.wroom_s3();
+  // camera.brownout.disable();
+  // camera.resolution.vga();
+  // camera.quality.high();
+
+  // // init camera
+  // while (!camera.begin().isOk())
+  //   Serial.println(camera.exception.toString());
+
+  //   // init SPIFFS
+  // while (!spiffs.begin().isOk())
+  //   Serial.println(spiffs.exception.toString());
+
+  // Serial.println("Camera OK");
+  // Serial.println("SPIFFS OK");
+  // Serial.println("Enter 'capture' to capture a new picture and save to SPIFFS");
+}
+
+void initCamera() {
+  // Camera init
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    Serial.printf("Camera init failed with error 0x%x", err);
+    ESP.restart();
+  }
 }
 
 void insertActivity(String label) {
@@ -209,13 +315,25 @@ void updateHistoryStatus(String status) {
   db.urlQuery_reset();
 }
 
+void takenDevicePhoto() {
+  StaticJsonDocument<200> devicePhotoDoc;
+  devicePhotoDoc["is_taking_photo"] = false;
+
+  String json;
+  serializeJson(devicePhotoDoc, json);
+
+  code = db.update("device").eq("id", DEVICE_ID).doUpdate(json);
+  Serial.println(code);
+  db.urlQuery_reset();
+}
+
 void assignTurn(String sessionID) {
   // Current device update
-  StaticJsonDocument<200> deviceDoc;
+  StaticJsonDocument<200> device1Doc;
   device1Doc["current_session"] = sessionID;
 
   String json;
-  serializeJson(deviceDoc, json);
+  serializeJson(device1Doc, json);
 
   code = db.update("device").eq("id", DEVICE_ID).doUpdate(json);
   Serial.println(code);
@@ -276,85 +394,87 @@ void finishSession() {
 }
 
 // capture image dari example
-void captureImage(){
-  if (!Serial.available())
-    return;
+// void captureImage(){
+//   if (!Serial.available())
+//     return;
 
-  if (Serial.readStringUntil('\n') != "capture") {
-    Serial.println("I only understand 'capture' (without quotes)");
-    return;
-  }
+//   if (Serial.readStringUntil('\n') != "capture") {
+//     Serial.println("I only understand 'capture' (without quotes)");
+//     return;
+//   }
 
-    // capture picture
-  if (!camera.capture().isOk()) {
-    Serial.println(camera.exception.toString());
-    return;
-  }
+//     // capture picture
+//   if (!camera.capture().isOk()) {
+//     Serial.println(camera.exception.toString());
+//     return;
+//   }
 
-    // save under root folder
-  if (spiffs.save(camera.frame).to("", "jpg").isOk()) {
-    Serial.print("File written to ");
-    String file = spiffs.session.lastFilename;
-    Serial.println(file);
-    saveImageToSupabase(file.toString());
-  }
-  else Serial.println(spiffs.session.exception.toString());
+//     // save under root folder
+//   if (spiffs.save(camera.frame).to("", "jpg").isOk()) {
+//     Serial.print("File written to ");
+//     String file = spiffs.session.lastFilename;
+//     Serial.println(file);
+//     saveImageToSupabase(file.toString());
+//   }
+//   else Serial.println(spiffs.session.exception.toString());
 
-    // restart the loop
-  Serial.println("Enter another filename");
+//     // restart the loop
+//   Serial.println("Enter another filename");
+// }
+
+bool checkPhoto( fs::FS &fs ) {
+  File f_pic = fs.open( FILE_PHOTO );
+  unsigned int pic_sz = f_pic.size();
+  return ( pic_sz > 100 );
 }
 
 // Capture Photo and Save it to SPIFFS
 void capturePhotoSaveSpiffs( void ) {
   camera_fb_t * fb = NULL; // pointer
-  bool ok = 0; // Boolean indicating if the picture has been taken correctly
 
-  do {
-    // Take a photo with the camera
-    Serial.println("Taking a photo...");
+  // Take a photo with the camera
+  Serial.println("Taking a photo...");
 
-    fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed");
-      return;
-    }
-    saveImageToSupabase("picture.jpg", fb->buf, fb->len);
-    // Photo file name
-    Serial.printf("Picture file name: %s\n", FILE_PHOTO);
-    File file = SPIFFS.open(FILE_PHOTO, FILE_WRITE);
-
-    // Insert the data in the photo file
-    if (!file) {
-      Serial.println("Failed to open file in writing mode");
-    }
-    else {
-      file.write(fb->buf, fb->len); // payload (image), payload length
-      Serial.print("The picture has been saved in ");
-      Serial.print(FILE_PHOTO);
-      Serial.print(" - Size: ");
-      Serial.print(file.size());
-      Serial.println(" bytes");
-    }
-    // Close the file
-    file.close();
-    esp_camera_fb_return(fb);
-
-    // check if file has been correctly saved in SPIFFS
-    ok = checkPhoto(SPIFFS);
-  } while ( !ok );
+  fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return;
+  }
+  saveImageToSupabase(DEVICE_ID + ".jpg", fb->buf, fb->len);
+  esp_camera_fb_return(fb);
 }
 
 void saveImageToSupabase(String filename, uint8_t *buffer, size_t len){
-  String bucket = "Amidogs";
+  String bucket = "amidogs-cam";
   String mime_type = "image/jpg";
-  // File file = SPIFFS.open(filename, FILE_WRITE);
-  // camera_fb_t
-  saveSupabase = db.upload(bucket, filename, mime_type, buffer, len);
-  Serial.println(saveSupabase)
+
+  int saveSupabase = db.uploadWithUpsert(bucket, filename, mime_type, buffer, len, true);
+  Serial.println(saveSupabase);
 }
 
 void loop() {
   unsigned long currentMillis = millis();
+
+  String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
+  // Serial.println(deviceCaptureRead);
+  db.urlQuery_reset();
+
+  StaticJsonDocument<200> deviceCaptureDoc;
+  error = deserializeJson(deviceCaptureDoc, deviceCaptureRead);
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
+  }
+
+  JsonArray array = deviceCaptureDoc.as<JsonArray>();
+  if (!array.isNull() && array.size() > 0) {
+    if (array[0]["is_taking_photo"].as<bool>()) {
+      // Take photo and upload to storage
+      capturePhotoSaveSpiffs();
+      takenDevicePhoto();
+    }
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     stopRinging();
@@ -365,6 +485,7 @@ void loop() {
     Serial.println(deviceRead);
     db.urlQuery_reset();
 
+    StaticJsonDocument<200> deviceDoc;
     error = deserializeJson(deviceDoc, deviceRead);
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
@@ -381,6 +502,7 @@ void loop() {
           Serial.println(sessionStatusRead);
           db.urlQuery_reset();
 
+          StaticJsonDocument<200> sessionStatusDoc;
           error = deserializeJson(sessionStatusDoc, sessionStatusRead);
           if (error) {
             Serial.print(F("deserializeJson() failed: "));
@@ -416,7 +538,6 @@ void loop() {
 
       // Post activity dog come to device
       insertActivity("Your dog has come to " + deviceLabel);
-      // captureImage();
 
       servoPos = (servoPos == 0 ? 180 : 0);
       Serial.printf("Servo Pos: %d", servoPos);
@@ -523,7 +644,7 @@ void loop() {
       if (currentHour == hour && currentMinute == minute) {
         portion = sessionObj["portion"];
         deviceRound = sessionObj["round"];
-        curSessionID = sessionObj["id"];
+        curSessionID = sessionObj["id"].as<String>();
 
         // insert history
         StaticJsonDocument<200> historyDoc;
