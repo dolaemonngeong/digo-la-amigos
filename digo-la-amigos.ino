@@ -37,23 +37,6 @@
 #include <FS.h>
 #define CAMERA_MODEL_WROVER_KIT // Has PSRAM
 #define CAMERA_MODEL_ESP32_CAM_BOARD
-// #define PWDN_GPIO_NUM     32
-// #define RESET_GPIO_NUM    -1
-// #define XCLK_GPIO_NUM      0
-// #define SIOD_GPIO_NUM     26
-// #define SIOC_GPIO_NUM     27
-// #define Y9_GPIO_NUM       35
-// #define Y8_GPIO_NUM       34
-// #define Y7_GPIO_NUM       39
-// #define Y6_GPIO_NUM       36
-// #define Y5_GPIO_NUM       21
-// #define Y4_GPIO_NUM       19
-// #define Y3_GPIO_NUM       18
-// #define Y2_GPIO_NUM        5
-// #define VSYNC_GPIO_NUM    25
-// #define HREF_GPIO_NUM     23
-// #define PCLK_GPIO_NUM     22
-
 #define PWDN_GPIO_NUM -1
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM 21
@@ -126,6 +109,8 @@ const long comeInterval = 600000;
 const long dispensingWaitTime = 5000;
 unsigned long feedPrevMillis = 0;
 const long feedInterval = 300000;
+unsigned long waitPrevMillis = 0;
+const long waitInterval = 600000;
 
 // Session variables
 String curSessionID = "";
@@ -162,7 +147,6 @@ Adafruit_NeoPixel pixels(NUMPIXELS, LED, NEO_GRB + NEO_KHZ800);
 // Supabase debugging variables
 int code = 0;
 DeserializationError error;
-
 
 void setup() {
   Serial.begin(9600);
@@ -210,7 +194,7 @@ void setup() {
   pixels.clear();
 
   // Camera
-// Print ESP32 Local IP Address
+  // Print ESP32 Local IP Address
   Serial.print("IP Address: http://");
   Serial.println(WiFi.localIP());
 
@@ -250,30 +234,6 @@ void setup() {
   }
   
   initCamera();
-
-  // // delay(3000);
-  // //   Serial.begin(115200);
-  // Serial.println("___SAVE PIC TO SPIFFS___");
-
-  //   // camera settings
-  //   // replace with your own model!
-  
-  // camera.pinout.wroom_s3();
-  // camera.brownout.disable();
-  // camera.resolution.vga();
-  // camera.quality.high();
-
-  // // init camera
-  // while (!camera.begin().isOk())
-  //   Serial.println(camera.exception.toString());
-
-  //   // init SPIFFS
-  // while (!spiffs.begin().isOk())
-  //   Serial.println(spiffs.exception.toString());
-
-  // Serial.println("Camera OK");
-  // Serial.println("SPIFFS OK");
-  // Serial.println("Enter 'capture' to capture a new picture and save to SPIFFS");
 }
 
 void initCamera() {
@@ -393,35 +353,6 @@ void finishSession() {
   stopRinging();
 }
 
-// capture image dari example
-// void captureImage(){
-//   if (!Serial.available())
-//     return;
-
-//   if (Serial.readStringUntil('\n') != "capture") {
-//     Serial.println("I only understand 'capture' (without quotes)");
-//     return;
-//   }
-
-//     // capture picture
-//   if (!camera.capture().isOk()) {
-//     Serial.println(camera.exception.toString());
-//     return;
-//   }
-
-//     // save under root folder
-//   if (spiffs.save(camera.frame).to("", "jpg").isOk()) {
-//     Serial.print("File written to ");
-//     String file = spiffs.session.lastFilename;
-//     Serial.println(file);
-//     saveImageToSupabase(file.toString());
-//   }
-//   else Serial.println(spiffs.session.exception.toString());
-
-//     // restart the loop
-//   Serial.println("Enter another filename");
-// }
-
 bool checkPhoto( fs::FS &fs ) {
   File f_pic = fs.open( FILE_PHOTO );
   unsigned int pic_sz = f_pic.size();
@@ -455,6 +386,13 @@ void saveImageToSupabase(String filename, uint8_t *buffer, size_t len){
 void loop() {
   unsigned long currentMillis = millis();
 
+  if (WiFi.status() != WL_CONNECTED) {
+    stopRinging();
+    isFeeding = false;
+    Serial.println("Wi-fi Disconnected");
+    return;
+  }
+
   String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
   // Serial.println(deviceCaptureRead);
   db.urlQuery_reset();
@@ -475,12 +413,8 @@ void loop() {
       takenDevicePhoto();
     }
   }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    stopRinging();
-    isFeeding = false;
-    Serial.println("Wi-fi Disconnected");
-  } else if (isWaiting) {
+  
+  if (isWaiting) {
     String deviceRead = db.from("device").select("current_session").eq("id", DEVICE_ID).limit(1).doSelect();
     Serial.println(deviceRead);
     db.urlQuery_reset();
@@ -524,6 +458,13 @@ void loop() {
           comePrevMillis = currentMillis;
         }
 
+        isWaiting = false;
+      } else if (currentMillis - waitPrevMillis >= waitInterval) {
+        // Post activity dog didn't come to device
+        insertActivity("Session is stopped unexpectedly at " + deviceLabel);
+        updateHistoryStatus("Unfinished");
+
+        stopRinging();
         isWaiting = false;
       }
     } else {
