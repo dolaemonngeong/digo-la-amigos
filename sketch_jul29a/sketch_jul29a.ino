@@ -1,6 +1,6 @@
 // blinkwithoutdelay di example 02.digital
 #include <Arduino.h>
-#include <ESP32_Supabase.h>
+#include <ESPSupabase.h>
 #include "HX711.h"
 
 #if defined(ESP8266)
@@ -77,8 +77,8 @@ HX711 scale;
 
 // Put your supabase URL and Anon key here...
 // Because Login already implemented, there's no need to use secretrole key
-String supabase_url = "https://aluowkxhbjklwfuqnxcc.supabase.co";
-String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsdW93a3hoYmprbHdmdXFueGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjA5NzI1MzMsImV4cCI6MjAzNjU0ODUzM30.riqECUMyUCZsokphF-vjJUOIxL8uqguRklypLQU5RBY";
+String supabase_url = "https://orvtswcxgbxqrxgmvirc.supabase.co";
+String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydnRzd2N4Z2J4cXJ4Z212aXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjI0MTcwNjUsImV4cCI6MjAzNzk5MzA2NX0.LnOc-2kyNlnxPrAMAP8-Slr9O-gb3POyDs49BUhZMzQ";
 
 // id device
 String DEVICE_ID = "a61454a3-52b5-4389-bd83-ed21c6aa930c";
@@ -107,6 +107,8 @@ const long comeInterval = 600000;
 const long dispensingWaitTime = 5000;
 unsigned long feedPrevMillis = 0;
 const long feedInterval = 300000;
+unsigned long photoPrevMillis = 0;
+const long photoInterval = 1000;
 
 // Session variables
 String curSessionID = "";
@@ -219,6 +221,7 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
+  config.grab_mode = CAMERA_GRAB_LATEST;
 
   if (psramFound()) {
     config.frame_size = FRAMESIZE_UXGA;
@@ -377,24 +380,26 @@ void loop() {
     return;
   }
 
-  String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
-  // Serial.println(deviceCaptureRead);
-  db.urlQuery_reset();
+  if (currentMillis - photoPrevMillis >= photoInterval) {
+    String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
+    // Serial.println(deviceCaptureRead);
+    db.urlQuery_reset();
 
-  StaticJsonDocument<200> deviceCaptureDoc;
-  error = deserializeJson(deviceCaptureDoc, deviceCaptureRead);
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
+    StaticJsonDocument<200> deviceCaptureDoc;
+    error = deserializeJson(deviceCaptureDoc, deviceCaptureRead);
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
 
-  JsonArray array = deviceCaptureDoc.as<JsonArray>();
-  if (!array.isNull() && array.size() > 0) {
-    if (array[0]["is_taking_photo"].as<bool>()) {
-      // Take photo and upload to storage
-      capturePhotoSaveSpiffs();
-      takenDevicePhoto();
+    JsonArray array = deviceCaptureDoc.as<JsonArray>();
+    if (!array.isNull() && array.size() > 0) {
+      if (array[0]["is_taking_photo"].as<bool>()) {
+        // Take photo and upload to storage
+        capturePhotoSaveSpiffs();
+        takenDevicePhoto();
+      }
     }
   }
   
@@ -403,6 +408,7 @@ void loop() {
     Serial.println(deviceRead);
     db.urlQuery_reset();
 
+    StaticJsonDocument<200> deviceDoc;
     error = deserializeJson(deviceDoc, deviceRead);
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
@@ -412,13 +418,14 @@ void loop() {
 
     JsonArray array = deviceDoc.as<JsonArray>();
     if (!array.isNull() && array.size() > 0) {
-      curSessionID = array[0]["current_session"].as<String>()
+      curSessionID = array[0]["current_session"].as<String>();
       if (curSessionID != " ") {
         // get history ID
         String historyRead = db.from("history").select("id").order("created_at", "desc", true).limit(1).doSelect();
         Serial.println(historyRead);
         db.urlQuery_reset();
 
+        StaticJsonDocument<200> historyDoc;
         error = deserializeJson(historyDoc, historyRead);
         if (error) {
           Serial.print(F("deserializeJson() failed: "));

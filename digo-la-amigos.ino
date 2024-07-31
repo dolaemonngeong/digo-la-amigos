@@ -111,6 +111,8 @@ unsigned long feedPrevMillis = 0;
 const long feedInterval = 300000;
 unsigned long waitPrevMillis = 0;
 const long waitInterval = 600000;
+unsigned long photoPrevMillis = 0;
+const long photoInterval = 1000;
 
 // Session variables
 String curSessionID = "";
@@ -393,24 +395,26 @@ void loop() {
     return;
   }
 
-  String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
-  // Serial.println(deviceCaptureRead);
-  db.urlQuery_reset();
+  if (currentMillis - photoPrevMillis >= photoInterval) {
+    String deviceCaptureRead = db.from("device").select("is_taking_photo").eq("id", DEVICE_ID).limit(1).doSelect();
+    // Serial.println(deviceCaptureRead);
+    db.urlQuery_reset();
 
-  StaticJsonDocument<200> deviceCaptureDoc;
-  error = deserializeJson(deviceCaptureDoc, deviceCaptureRead);
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
-    return;
-  }
+    StaticJsonDocument<200> deviceCaptureDoc;
+    error = deserializeJson(deviceCaptureDoc, deviceCaptureRead);
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
 
-  JsonArray array = deviceCaptureDoc.as<JsonArray>();
-  if (!array.isNull() && array.size() > 0) {
-    if (array[0]["is_taking_photo"].as<bool>()) {
-      // Take photo and upload to storage
-      capturePhotoSaveSpiffs();
-      takenDevicePhoto();
+    JsonArray array = deviceCaptureDoc.as<JsonArray>();
+    if (!array.isNull() && array.size() > 0) {
+      if (array[0]["is_taking_photo"].as<bool>()) {
+        // Take photo and upload to storage
+        capturePhotoSaveSpiffs();
+        takenDevicePhoto();
+      }
     }
   }
   
