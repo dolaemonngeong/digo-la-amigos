@@ -77,11 +77,13 @@ HX711 scale;
 
 // Put your supabase URL and Anon key here...
 // Because Login already implemented, there's no need to use secretrole key
-String supabase_url = "https://aluowkxhbjklwfuqnxcc.supabase.co";
-String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsdW93a3hoYmprbHdmdXFueGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjA5NzI1MzMsImV4cCI6MjAzNjU0ODUzM30.riqECUMyUCZsokphF-vjJUOIxL8uqguRklypLQU5RBY";
-
+// String supabase_url = "https://aluowkxhbjklwfuqnxcc.supabase.co";
+String supabase_url = "https://orvtswcxgbxqrxgmvirc.supabase.co";
+// String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsdW93a3hoYmprbHdmdXFueGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjA5NzI1MzMsImV4cCI6MjAzNjU0ODUzM30.riqECUMyUCZsokphF-vjJUOIxL8uqguRklypLQU5RBY";
+String anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ydnRzd2N4Z2J4cXJ4Z212aXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjI0MTcwNjUsImV4cCI6MjAzNzk5MzA2NX0.LnOc-2kyNlnxPrAMAP8-Slr9O-gb3POyDs49BUhZMzQ";
 // id device
-String DEVICE_ID = "e1f1cd94-33e6-4d51-8c0b-c44404f474c2";
+// String DEVICE_ID = "e1f1cd94-33e6-4d51-8c0b-c44404f474c2";
+String DEVICE_ID = "a61454a3-52b5-4389-bd83-ed21c6aa930c";
 String OTHER_DEVICE_ID = "a61454a3-52b5-4389-bd83-ed21c6aa930c";
 
 // put your WiFi credentials (SSID and Password) here
@@ -177,9 +179,10 @@ void setup() {
   ntp.begin();
 
   pinMode(2, OUTPUT);
-  pinMode(DISTANCE_SENSOR, INPUT);
+  pinMode(DISTANCE_SENSOR, INPUT_PULLUP);
+  digitalWrite(DISTANCE_SENSOR, HIGH);
 
-  foodServo.attach(SERVO);
+  foodServo.attach(SERVO, 500, 2500);
   foodServo.write(servoPos);
 
   // Weight sensor
@@ -418,63 +421,65 @@ void loop() {
     }
   }
   
-  if (isWaiting) {
-    String deviceRead = db.from("device").select("current_session").eq("id", DEVICE_ID).limit(1).doSelect();
-    Serial.println(deviceRead);
-    db.urlQuery_reset();
+  // if (isWaiting) {
+  //   String deviceRead = db.from("device").select("current_session").eq("id", DEVICE_ID).limit(1).doSelect();
+  //   Serial.println(deviceRead);
+  //   db.urlQuery_reset();
 
-    StaticJsonDocument<200> deviceDoc;
-    error = deserializeJson(deviceDoc, deviceRead);
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
+  //   StaticJsonDocument<200> deviceDoc;
+  //   error = deserializeJson(deviceDoc, deviceRead);
+  //   if (error) {
+  //     Serial.print(F("deserializeJson() failed: "));
+  //     Serial.println(error.f_str());
+  //     return;
+  //   }
 
-    JsonArray array = deviceDoc.as<JsonArray>();
-    if (!array.isNull() && array.size() > 0) {
-      if (array[0]["current_session"].as<String>() == curSessionID) {
-        if (--deviceRound <= 0) {
-          // check status if not Unfinished
-          String sessionStatusRead = db.from("session").select("status").eq("id", curSessionID).limit(1).doSelect();
-          Serial.println(sessionStatusRead);
-          db.urlQuery_reset();
+  //   JsonArray array = deviceDoc.as<JsonArray>();
+  //   if (!array.isNull() && array.size() > 0) {
+  //     if (array[0]["current_session"].as<String>() == curSessionID) {
+  //       if (--deviceRound <= 0) {
+  //         // check status if not Unfinished
+  //         String sessionStatusRead = db.from("session").select("status").eq("id", curSessionID).limit(1).doSelect();
+  //         Serial.println(sessionStatusRead);
+  //         db.urlQuery_reset();
 
-          StaticJsonDocument<200> sessionStatusDoc;
-          error = deserializeJson(sessionStatusDoc, sessionStatusRead);
-          if (error) {
-            Serial.print(F("deserializeJson() failed: "));
-            Serial.println(error.f_str());
-            return;
-          }
+  //         StaticJsonDocument<200> sessionStatusDoc;
+  //         error = deserializeJson(sessionStatusDoc, sessionStatusRead);
+  //         if (error) {
+  //           Serial.print(F("deserializeJson() failed: "));
+  //           Serial.println(error.f_str());
+  //           return;
+  //         }
 
-          JsonArray sessionStatusArray = deviceDoc.as<JsonArray>();
-          if (!sessionStatusArray.isNull() && sessionStatusArray.size() > 0) {
-            if (array[0]["status"].as<String>() != "Unfinished") {
-              finishSession();
-            }
-          } else {
-            insertActivity("Session is stopped unexpectedly at " + deviceLabel);
-            updateHistoryStatus("Unfinished");
-          }
-        } else {
-          startRinging();
-          comePrevMillis = currentMillis;
-        }
+  //         JsonArray sessionStatusArray = deviceDoc.as<JsonArray>();
+  //         if (!sessionStatusArray.isNull() && sessionStatusArray.size() > 0) {
+  //           if (array[0]["status"].as<String>() != "Unfinished") {
+  //             finishSession();
+  //           }
+  //         } else {
+  //           insertActivity("Session is stopped unexpectedly at " + deviceLabel);
+  //           updateHistoryStatus("Unfinished");
+  //         }
+  //       } else {
+  //         startRinging();
+  //         comePrevMillis = currentMillis;
+  //       }
 
-        isWaiting = false;
-      } else if (currentMillis - waitPrevMillis >= waitInterval) {
-        // Post activity dog didn't come to device
-        insertActivity("Session is stopped unexpectedly at " + deviceLabel);
-        updateHistoryStatus("Unfinished");
+  //       isWaiting = false;
+  //     } else if (currentMillis - waitPrevMillis >= waitInterval) {
+  //       // Post activity dog didn't come to device
+  //       insertActivity("Session is stopped unexpectedly at " + deviceLabel);
+  //       updateHistoryStatus("Unfinished");
 
-        stopRinging();
-        isWaiting = false;
-      }
-    } else {
-      Serial.println("No valid device found.");
-    }
-  } else if (isRinging) {
+  //       stopRinging();
+  //       isWaiting = false;
+  //     }
+  //   } else {
+  //     Serial.println("No valid device found.");
+  //   }
+  // } else 
+  
+  if (isRinging) {
     // detect ada pergerakan dengan infrared distance sensor
     int state = digitalRead(DISTANCE_SENSOR);
 
@@ -485,7 +490,8 @@ void loop() {
       insertActivity("Your dog has come to " + deviceLabel);
 
       servoPos = (servoPos == 0 ? 180 : 0);
-      Serial.printf("Servo Pos: %d", servoPos);
+      Serial.printf("Servo Pos: %d\n", servoPos);
+      foodServo.attach(SERVO, 500, 2500);
       foodServo.write(servoPos);
       
       isFeeding = true;
@@ -511,7 +517,8 @@ void loop() {
 
             if (--deviceRound > 0) {
               // Update session current_device
-              passSessionTurnToOther(curSessionID);
+              // passSessionTurnToOther(curSessionID);
+              startRinging();
             } else {
               finishSession();
             }
@@ -549,7 +556,7 @@ void loop() {
     }
 
     deviceLabel = deviceDoc[0]["label"].as<String>();
-    deviceIsEnabled = deviceDoc[0]["is_enabled"];
+    deviceIsEnabled = deviceDoc[0]["is_active"];
     deviceLightRed = deviceDoc[0]["light_red"];
     deviceLightGreen = deviceDoc[0]["light_green"];
     deviceLightBlue = deviceDoc[0]["light_blue"];
@@ -558,7 +565,7 @@ void loop() {
     sessionPrevMillis = currentMillis;
 
     // Query Session
-    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").eq("is_enabled", "TRUE").order("time", "asc", true).doSelect();
+    String sessionRead = db.from("session").select("*").eq("is_deleted", "FALSE").eq("is_active", "TRUE").order("time", "asc", true).doSelect();
     Serial.println(sessionRead);
     db.urlQuery_reset();
 
